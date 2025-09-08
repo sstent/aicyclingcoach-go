@@ -11,6 +11,7 @@ from .routes import rule as rule_routes
 from .routes import plan as plan_routes
 from .routes import workouts as workout_routes
 from .routes import prompts as prompt_routes
+from .routes import dashboard as dashboard_routes
 from .config import settings
 
 app = FastAPI(
@@ -46,6 +47,7 @@ app.include_router(rule_routes.router)
 app.include_router(plan_routes.router)
 app.include_router(workout_routes.router, prefix="/workouts", tags=["workouts"])
 app.include_router(prompt_routes.router, prefix="/prompts", tags=["prompts"])
+app.include_router(dashboard_routes.router, prefix="/api/dashboard", tags=["dashboard"])
 
 async def check_migration_status():
     """Check if database migrations are up to date."""

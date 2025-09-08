@@ -7,14 +7,14 @@ WORKDIR /app
 # Copy package.json and package-lock.json
 COPY frontend/package*.json ./
 
-# Install dependencies
-RUN npm install
+# Install all dependencies including devDependencies
+RUN npm install --include=dev
 
 # Copy source code
 COPY frontend/ .
 
-# Build application
-RUN npm run build
+# Run tests and build application
+RUN npm test && npm run build
 
 # Production stage
 FROM node:20-alpine AS production

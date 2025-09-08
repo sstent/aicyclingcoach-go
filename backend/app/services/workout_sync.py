@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from app.services.garmin import GarminService, GarminAPIError
+from app.services.garmin import GarminService, GarminAPIError, GarminAuthError
 from app.models.workout import Workout
 from app.models.garmin_sync_log import GarminSyncLog
 from datetime import datetime, timedelta
