@@ -1,0 +1,7 @@
+garmin:
+  username: "your_garmin_email@example.com"
+  password: "your_garmin_password"
+openrouter:
+  apikey: "your_openrouter_api_key"
+  model: "deepseek/deepseek-r1-0528"
+storagepath: "/home/sstent/.fitness-tui"
