@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"time"
 
-	garth "garmin-connect/garth"
-
+	"github.com/sstent/fitness-tui/internal/garmin/garth"
+	"github.com/sstent/fitness-tui/internal/garmin/garth/client"
 	"github.com/sstent/fitness-tui/internal/tui/models"
 )
 
@@ -21,7 +21,7 @@ type Client struct {
 	username    string
 	password    string
 	storagePath string
-	garthClient *garth.Client
+	garthClient *client.Client
 }
 
 func NewClient(username, password, storagePath string) *Client {
@@ -92,9 +92,9 @@ func (c *Client) GetActivities(ctx context.Context, limit int, logger Logger) ([
 	// Convert to our internal model
 	activities := make([]*models.Activity, 0, len(garthActivities))
 	for _, ga := range garthActivities {
-		startTime, err := time.Parse(time.RFC3339, ga.StartTimeGMT)
-		if err != nil {
-			logger.Warnf("Failed to parse activity time: %v", err)
+		// Use the already parsed time from CustomTime struct
+		if ga.StartTimeGMT.IsZero() {
+			logger.Warnf("Activity %d has invalid start time", ga.ActivityID)
 			continue
 		}
 
@@ -102,7 +102,7 @@ func (c *Client) GetActivities(ctx context.Context, limit int, logger Logger) ([
 			ID:        fmt.Sprintf("%d", ga.ActivityID),
 			Name:      ga.ActivityName,
 			Type:      ga.ActivityType.TypeKey,
-			Date:      startTime,
+			Date:      ga.StartTimeGMT.Time, // Access the parsed time directly
 			Distance:  ga.Distance,
 			Duration:  time.Duration(ga.Duration) * time.Second,
 			Elevation: ga.ElevationGain,

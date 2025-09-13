@@ -150,7 +150,9 @@ func (c *Client) Login(email, password string) (*types.OAuth2Token, *MFAContext,
 		}, nil
 	}
 
+	// Debug: Log full response body when title is unexpected
 	if title != "Success" {
+		fmt.Printf("Unexpected login response body: %s\n", string(body))
 		return nil, nil, fmt.Errorf("login failed, unexpected title: %s", title)
 	}
 

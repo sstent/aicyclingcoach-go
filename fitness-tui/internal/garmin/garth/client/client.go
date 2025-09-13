@@ -224,9 +224,11 @@ func (c *Client) GetActivities(limit int) ([]types.Activity, error) {
 // SaveSession saves the current session to a file
 func (c *Client) SaveSession(filename string) error {
 	session := types.SessionData{
-		Domain:    c.Domain,
-		Username:  c.Username,
-		AuthToken: c.AuthToken,
+		Domain:      c.Domain,
+		Username:    c.Username,
+		AuthToken:   c.AuthToken,
+		OAuth1Token: c.OAuth1Token,
+		OAuth2Token: c.OAuth2Token,
 	}
 
 	data, err := json.MarshalIndent(session, "", "  ")
@@ -276,6 +278,8 @@ func (c *Client) LoadSession(filename string) error {
 	c.Domain = session.Domain
 	c.Username = session.Username
 	c.AuthToken = session.AuthToken
+	c.OAuth1Token = session.OAuth1Token
+	c.OAuth2Token = session.OAuth2Token
 
 	return nil
 }

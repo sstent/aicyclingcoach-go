@@ -2,6 +2,7 @@ package types
 
 import (
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -17,9 +18,11 @@ type Client struct {
 
 // SessionData represents saved session information
 type SessionData struct {
-	Domain    string `json:"domain"`
-	Username  string `json:"username"`
-	AuthToken string `json:"auth_token"`
+	Domain      string       `json:"domain"`
+	Username    string       `json:"username"`
+	AuthToken   string       `json:"auth_token"`
+	OAuth1Token *OAuth1Token `json:"oauth1_token,omitempty"`
+	OAuth2Token *OAuth2Token `json:"oauth2_token,omitempty"`
 }
 
 // ActivityType represents the type of activity
@@ -40,8 +43,8 @@ type Activity struct {
 	ActivityID      int64        `json:"activityId"`
 	ActivityName    string       `json:"activityName"`
 	Description     string       `json:"description"`
-	StartTimeLocal  string       `json:"startTimeLocal"`
-	StartTimeGMT    string       `json:"startTimeGMT"`
+	StartTimeLocal  CustomTime   `json:"startTimeLocal"`
+	StartTimeGMT    CustomTime   `json:"startTimeGMT"`
 	ActivityType    ActivityType `json:"activityType"`
 	EventType       EventType    `json:"eventType"`
 	Distance        float64      `json:"distance"`
@@ -63,6 +66,37 @@ type OAuth1Token struct {
 	OAuthTokenSecret string `json:"oauth_token_secret"`
 	MFAToken         string `json:"mfa_token,omitempty"`
 	Domain           string `json:"domain"`
+}
+
+// CustomTime handles Garmin's timestamp formats
+type CustomTime struct {
+	time.Time
+}
+
+func (ct *CustomTime) UnmarshalJSON(b []byte) error {
+	s := strings.Trim(string(b), "\"")
+	if s == "null" || s == "" {
+		return nil
+	}
+
+	// Try different timestamp formats
+	formats := []string{
+		"2006-01-02T15:04:05.999",
+		"2006-01-02 15:04:05",
+		time.RFC3339,
+	}
+
+	var t time.Time
+	var err error
+	for _, format := range formats {
+		t, err = time.Parse(format, s)
+		if err == nil {
+			ct.Time = t
+			return nil
+		}
+	}
+
+	return err
 }
 
 // OAuth2Token represents OAuth2 token response
