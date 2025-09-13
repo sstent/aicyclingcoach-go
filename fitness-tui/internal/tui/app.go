@@ -14,6 +14,9 @@ type App struct {
 	activityStorage *storage.ActivityStorage
 	garminClient    *garmin.Client
 	logger          garmin.Logger
+	activityList    *screens.ActivityList // Persistent activity list
+	width           int                   // Track window width
+	height          int                   // Track window height
 }
 
 func NewApp(activityStorage *storage.ActivityStorage, garminClient *garmin.Client, logger garmin.Logger) *App {
@@ -29,6 +32,7 @@ func NewApp(activityStorage *storage.ActivityStorage, garminClient *garmin.Clien
 		activityStorage: activityStorage,
 		garminClient:    garminClient,
 		logger:          logger,
+		activityList:    activityList, // Store persistent reference
 	}
 }
 
@@ -39,14 +43,19 @@ func (a *App) Init() tea.Cmd {
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		// Forward window size to current model
+		// Store window size and forward to current model
+		a.width = msg.Width
+		a.height = msg.Height
 		updatedModel, cmd := a.currentModel.Update(msg)
 		a.currentModel = updatedModel
 		return a, cmd
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c", "q":
-			return a, tea.Quit
+			// Only quit if we're at the top level (activity list)
+			if _, ok := a.currentModel.(*screens.ActivityList); ok {
+				return a, tea.Quit
+			}
 		}
 	case screens.ActivitySelectedMsg:
 		a.logger.Debugf("App.Update() - Received ActivitySelectedMsg for: %s", msg.Activity.Name)
@@ -56,15 +65,23 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, detail.Init()
 	case screens.BackToListMsg:
 		a.logger.Debugf("App.Update() - Received BackToListMsg")
-		// Re-initialize the activity list when navigating back
-		activityList := screens.NewActivityList(a.activityStorage, a.garminClient)
-		a.currentModel = activityList
-		return a, activityList.Init()
+		// Return to existing activity list instead of creating new
+		a.currentModel = a.activityList
+		// Send current window size to ensure proper rendering
+		return a, func() tea.Msg {
+			return tea.WindowSizeMsg{Width: a.width, Height: a.height}
+		}
 	}
 
 	// Delegate to the current model
 	updatedModel, cmd := a.currentModel.Update(msg)
 	a.currentModel = updatedModel
+
+	// Update activity list reference if needed
+	if activityList, ok := updatedModel.(*screens.ActivityList); ok {
+		a.activityList = activityList
+	}
+
 	return a, cmd
 }
 

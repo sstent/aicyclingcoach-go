@@ -25,6 +25,7 @@ type ActivityDetail struct {
 	hrChart        *components.Chart
 	elevationChart *components.Chart
 	logger         garmin.Logger
+	ready          bool // Tracks if viewport has been initialized
 }
 
 type Styles struct {
@@ -46,11 +47,11 @@ func NewActivityDetail(activity *models.Activity, analysis string, logger garmin
 		Subtitle:  lipgloss.NewStyle().Foreground(lipgloss.Color("8")).MarginTop(1),
 		StatName:  lipgloss.NewStyle().Foreground(lipgloss.Color("7")),
 		StatValue: lipgloss.NewStyle().Foreground(lipgloss.Color("15")),
-		Analysis:  lipgloss.NewStyle().MarginTop(2),
-		Viewport:  lipgloss.NewStyle().Padding(0, 2),
+		Analysis:  lipgloss.NewStyle().MarginTop(1),
+		Viewport:  lipgloss.NewStyle().Padding(0, 1),
 	}
 
-	vp := viewport.New(0, 0)
+	vp := viewport.New(80, 20) // Default dimensions
 	ad := &ActivityDetail{
 		activity:       activity,
 		analysis:       analysis,
@@ -65,9 +66,10 @@ func NewActivityDetail(activity *models.Activity, analysis string, logger garmin
 }
 
 func (m *ActivityDetail) Init() tea.Cmd {
-	// Initialize content immediately instead of waiting for WindowSizeMsg
-	m.setContent()
-	return nil
+	// Request window size to get proper dimensions
+	return tea.Batch(
+		func() tea.Msg { return tea.WindowSizeMsg{Width: 80, Height: 24} },
+	)
 }
 
 func (m *ActivityDetail) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -75,14 +77,12 @@ func (m *ActivityDetail) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.viewport = viewport.New(msg.Width, msg.Height-4)
-		chartWidth := msg.Width/2 - 4
-		m.hrChart.Width = chartWidth
-		m.elevationChart.Width = chartWidth
+		m.viewport = viewport.New(msg.Width, msg.Height-2)
+		m.ready = true
 		m.setContent()
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "esc":
+		case "esc", "b", "q": // Add 'q' key for quitting/going back
 			return m, func() tea.Msg { return BackToListMsg{} }
 		}
 	}
@@ -93,12 +93,18 @@ func (m *ActivityDetail) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *ActivityDetail) View() string {
+	if !m.ready {
+		return "Loading activity details..."
+	}
+
 	instructions := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("241")).
-		MarginTop(1).
 		Render("esc back • q quit")
 
-	return fmt.Sprintf("%s\n%s", m.viewport.View(), instructions)
+	return lipgloss.JoinVertical(lipgloss.Left,
+		m.viewport.View(),
+		instructions,
+	)
 }
 
 func (m *ActivityDetail) setContent() {
@@ -117,8 +123,6 @@ func (m *ActivityDetail) setContent() {
 	m.logger.Debugf("ActivityDetail.setContent() - Metrics: AvgHR=%d, MaxHR=%d, AvgSpeed=%.2f", m.activity.Metrics.AvgHeartRate, m.activity.Metrics.MaxHeartRate, m.activity.Metrics.AvgSpeed)
 
 	// Debug info at top
-	content.WriteString(fmt.Sprintf("DEBUG: Viewport W=%d H=%d, Activity: %s\n", m.width, m.height, m.activity.Name))
-	content.WriteString("\n")
 
 	// Activity Details
 	content.WriteString(m.styles.Title.Render(m.activity.Name))
@@ -188,14 +192,22 @@ func (m *ActivityDetail) setContent() {
 
 	// Only show charts if we have data
 	if len(m.activity.Metrics.HeartRateData) > 0 || len(m.activity.Metrics.ElevationData) > 0 {
-		charts := lipgloss.JoinHorizontal(
-			lipgloss.Top,
-			m.hrChart.View(),
-			lipgloss.NewStyle().Width(2).Render(" "),
-			m.elevationChart.View(),
-		)
-		content.WriteString(charts)
-		content.WriteString("\n\n")
+		// Calculate available height for charts (about 1/3 of screen height)
+		chartHeight := max(6, (m.height-20)/3)
+		chartWidth := max(30, m.width-4)
+
+		m.hrChart.Width = chartWidth
+		m.hrChart.Height = chartHeight
+		m.elevationChart.Width = chartWidth
+		m.elevationChart.Height = chartHeight
+
+		// Render charts with spacing
+		if len(m.activity.Metrics.HeartRateData) > 0 {
+			content.WriteString("\n" + m.hrChart.View() + "\n")
+		}
+		if len(m.activity.Metrics.ElevationData) > 0 {
+			content.WriteString("\n" + m.elevationChart.View() + "\n")
+		}
 	}
 
 	// Analysis Section with formatted output
@@ -241,5 +253,13 @@ func (m *ActivityDetail) setContent() {
 		}
 	}
 
-	m.viewport.SetContent(m.styles.Viewport.Render(content.String()))
+	m.viewport.SetContent(content.String())
+}
+
+// Helper function for max since it's not available in older Go versions
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
