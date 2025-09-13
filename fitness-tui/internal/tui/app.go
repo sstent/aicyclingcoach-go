@@ -26,7 +26,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (a *App) View() string {
-	return "AICyclingCoach-GO\n\nPress q to quit\n"
+	return a.currentModel.View()
 }
 
 func (a *App) Run() error {

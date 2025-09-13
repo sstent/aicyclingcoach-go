@@ -13,6 +13,11 @@ import (
 	"github.com/sstent/fitness-tui/internal/tui/models"
 )
 
+var (
+	errorStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true).Padding(1, 2)
+	statusStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Italic(true)
+)
+
 type ActivityList struct {
 	list         list.Model
 	storage      *storage.ActivityStorage
@@ -109,7 +114,10 @@ func (m *ActivityList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.loadActivities, m.setLoading(false))
 
 	case syncErrorMsg:
-		m.statusMsg = fmt.Sprintf("Sync error: %v", msg.error)
+		m.statusMsg = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("196")). // Red color for errors
+			MarginTop(1).
+			Render(fmt.Sprintf("⚠️  Sync failed: %v\nPress 's' to retry", msg.error))
 		return m, m.setLoading(false)
 	}
 
@@ -138,6 +146,10 @@ func (m *ActivityList) View() string {
 }
 
 // Messages and commands
+type ActivitySelectedMsg struct {
+	Activity *models.Activity
+}
+
 type activitiesLoadedMsg struct {
 	activities []*models.Activity
 }
@@ -155,6 +167,11 @@ func (m *ActivityList) loadActivities() tea.Msg {
 }
 
 func (m *ActivityList) syncActivities() tea.Msg {
+	if err := m.storage.AcquireLock(); err != nil {
+		return syncErrorMsg{err}
+	}
+	defer m.storage.ReleaseLock()
+
 	activities, err := m.garminClient.GetActivities(context.Background(), 50)
 	if err != nil {
 		return syncErrorMsg{err}

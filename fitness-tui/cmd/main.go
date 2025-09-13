@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/sstent/aicyclingcoach-go/internal/config"
-	"github.com/sstent/aicyclingcoach-go/internal/tui"
+	"github.com/sstent/fitness-tui/internal/config"
+	"github.com/sstent/fitness-tui/internal/tui"
 )
 
 func main() {
