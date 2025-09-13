@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/sstent/fitness-tui/internal/garmin"
 	"github.com/sstent/fitness-tui/internal/tui/components"
 	"github.com/sstent/fitness-tui/internal/tui/models"
 )
@@ -23,6 +24,7 @@ type ActivityDetail struct {
 	styles         *Styles
 	hrChart        *components.Chart
 	elevationChart *components.Chart
+	logger         garmin.Logger
 }
 
 type Styles struct {
@@ -34,7 +36,11 @@ type Styles struct {
 	Viewport  lipgloss.Style
 }
 
-func NewActivityDetail(activity *models.Activity, analysis string) *ActivityDetail {
+func NewActivityDetail(activity *models.Activity, analysis string, logger garmin.Logger) *ActivityDetail {
+	if logger == nil {
+		logger = &garmin.NoopLogger{}
+	}
+
 	styles := &Styles{
 		Title:     lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("5")),
 		Subtitle:  lipgloss.NewStyle().Foreground(lipgloss.Color("8")).MarginTop(1),
@@ -50,6 +56,7 @@ func NewActivityDetail(activity *models.Activity, analysis string) *ActivityDeta
 		analysis:       analysis,
 		viewport:       vp,
 		styles:         styles,
+		logger:         logger,
 		hrChart:        components.NewChart(activity.Metrics.HeartRateData, 40, 4, "Heart Rate (bpm)"),
 		elevationChart: components.NewChart(activity.Metrics.ElevationData, 40, 4, "Elevation (m)"),
 	}
@@ -76,7 +83,7 @@ func (m *ActivityDetail) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "esc":
-			return m, tea.Quit
+			return m, func() tea.Msg { return BackToListMsg{} }
 		}
 	}
 
@@ -101,13 +108,13 @@ func (m *ActivityDetail) setContent() {
 	if m.activity == nil {
 		content.WriteString("Activity data is nil!")
 		m.viewport.SetContent(m.styles.Viewport.Render(content.String()))
-		fmt.Println("DEBUG: ActivityDetail.setContent() - activity is nil")
+		m.logger.Debugf("ActivityDetail.setContent() - activity is nil")
 		return
 	}
 
-	fmt.Printf("DEBUG: ActivityDetail.setContent() - Rendering activity: %s\n", m.activity.Name)
-	fmt.Printf("DEBUG: ActivityDetail.setContent() - Duration: %v, Distance: %.2f\n", m.activity.Duration, m.activity.Distance)
-	fmt.Printf("DEBUG: ActivityDetail.setContent() - Metrics: AvgHR=%d, MaxHR=%d, AvgSpeed=%.2f\n", m.activity.Metrics.AvgHeartRate, m.activity.Metrics.MaxHeartRate, m.activity.Metrics.AvgSpeed)
+	m.logger.Debugf("ActivityDetail.setContent() - Rendering activity: %s", m.activity.Name)
+	m.logger.Debugf("ActivityDetail.setContent() - Duration: %v, Distance: %.2f", m.activity.Duration, m.activity.Distance)
+	m.logger.Debugf("ActivityDetail.setContent() - Metrics: AvgHR=%d, MaxHR=%d, AvgSpeed=%.2f", m.activity.Metrics.AvgHeartRate, m.activity.Metrics.MaxHeartRate, m.activity.Metrics.AvgSpeed)
 
 	// Debug info at top
 	content.WriteString(fmt.Sprintf("DEBUG: Viewport W=%d H=%d, Activity: %s\n", m.width, m.height, m.activity.Name))

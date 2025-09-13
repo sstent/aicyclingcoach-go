@@ -98,7 +98,8 @@ func (c *Client) GetActivities(ctx context.Context, limit int, logger Logger) ([
 			continue
 		}
 
-		activities = append(activities, &models.Activity{
+		// Convert garth activity to internal model
+		activity := &models.Activity{
 			ID:        fmt.Sprintf("%d", ga.ActivityID),
 			Name:      ga.ActivityName,
 			Type:      ga.ActivityType.TypeKey,
@@ -107,7 +108,31 @@ func (c *Client) GetActivities(ctx context.Context, limit int, logger Logger) ([
 			Duration:  time.Duration(ga.Duration) * time.Second,
 			Elevation: ga.ElevationGain,
 			Calories:  int(ga.Calories),
-		})
+		}
+
+		// Populate metrics from garth data
+		if ga.AverageHR > 0 {
+			activity.Metrics.AvgHeartRate = int(ga.AverageHR)
+		}
+		if ga.MaxHR > 0 {
+			activity.Metrics.MaxHeartRate = int(ga.MaxHR)
+		}
+		if ga.AverageSpeed > 0 {
+			// Convert m/s to km/h
+			activity.Metrics.AvgSpeed = ga.AverageSpeed * 3.6
+		}
+		if ga.ElevationGain > 0 {
+			activity.Metrics.ElevationGain = ga.ElevationGain
+		}
+		if ga.ElevationLoss > 0 {
+			activity.Metrics.ElevationLoss = ga.ElevationLoss
+		}
+		if ga.AverageSpeed > 0 && ga.Distance > 0 {
+			// Calculate pace: seconds per km
+			activity.Metrics.AvgPace = (ga.Duration / ga.Distance) * 1000
+		}
+
+		activities = append(activities, activity)
 	}
 
 	logger.Infof("Successfully fetched %d activities", len(activities))

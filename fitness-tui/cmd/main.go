@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 	"github.com/sstent/fitness-tui/internal/config"
@@ -82,10 +83,19 @@ func runTUI() {
 		os.Exit(1)
 	}
 
+	// Initialize file logger
+	logPath := filepath.Join(cfg.StoragePath, "fitness-tui.log")
+	fileLogger, err := garmin.NewFileLogger(logPath)
+	if err != nil {
+		fmt.Printf("Failed to initialize logger: %v\n", err)
+		os.Exit(1)
+	}
+	defer fileLogger.Close()
+
 	activityStorage := storage.NewActivityStorage(cfg.StoragePath)
 	garminClient := garmin.NewClient(cfg.Garmin.Username, cfg.Garmin.Password, cfg.StoragePath)
 
-	app := tui.NewApp(activityStorage, garminClient)
+	app := tui.NewApp(activityStorage, garminClient, fileLogger)
 	if err := app.Run(); err != nil {
 		fmt.Printf("Application error: %v\n", err)
 		os.Exit(1)
