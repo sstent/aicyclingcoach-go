@@ -21,7 +21,7 @@ var (
 type ActivityList struct {
 	list         list.Model
 	storage      *storage.ActivityStorage
-	garminClient *garmin.Client
+	garminClient garmin.GarminClient
 	width        int
 	height       int
 	statusMsg    string
@@ -47,7 +47,7 @@ func (i activityItem) Description() string {
 		i.activity.FormattedPace())
 }
 
-func NewActivityList(storage *storage.ActivityStorage, client *garmin.Client) *ActivityList {
+func NewActivityList(storage *storage.ActivityStorage, client garmin.GarminClient) *ActivityList {
 	delegate := list.NewDefaultDelegate()
 	delegate.Styles.SelectedTitle = delegate.Styles.SelectedTitle.
 		Foreground(lipgloss.Color("170")).
@@ -72,7 +72,9 @@ func NewActivityList(storage *storage.ActivityStorage, client *garmin.Client) *A
 }
 
 func (m *ActivityList) Init() tea.Cmd {
-	return tea.Batch(m.loadActivities, m.garminClient.Connect)
+	// Initialize Garmin connection synchronously for now
+	m.garminClient.Connect(&garmin.NoopLogger{})
+	return m.loadActivities
 }
 
 func (m *ActivityList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -172,7 +174,7 @@ func (m *ActivityList) syncActivities() tea.Msg {
 	}
 	defer m.storage.ReleaseLock()
 
-	activities, err := m.garminClient.GetActivities(context.Background(), 50)
+	activities, err := m.garminClient.GetActivities(context.Background(), 50, &garmin.NoopLogger{})
 	if err != nil {
 		return syncErrorMsg{err}
 	}

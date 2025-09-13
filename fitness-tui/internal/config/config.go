@@ -2,7 +2,6 @@ package config
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 
@@ -22,13 +21,8 @@ type Config struct {
 }
 
 func Load() (*Config, error) {
-	// DEBUG: Add diagnostic logging
-	cwd, _ := os.Getwd()
-	log.Printf("DEBUG: Current working directory: %s", cwd)
-
 	home, _ := os.UserHomeDir()
 	configDir := filepath.Join(home, ".fitness-tui")
-	log.Printf("DEBUG: Expected config directory: %s", configDir)
 
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
@@ -43,15 +37,11 @@ func Load() (*Config, error) {
 	// Read configuration
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
-			log.Printf("DEBUG: Config file not found in search paths")
-			log.Printf("DEBUG: Searched in: ., %s, ./.fitness-tui/", configDir)
 			return nil, fmt.Errorf("config file not found - expected config.yaml in: %s", configDir)
 		} else {
 			return nil, fmt.Errorf("config read error: %w", err)
 		}
 	}
-
-	log.Printf("DEBUG: Successfully loaded config from: %s", viper.ConfigFileUsed())
 
 	// Create storage path atomically
 	storagePath := viper.GetString("storagepath")

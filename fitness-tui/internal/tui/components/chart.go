@@ -49,10 +49,19 @@ func (c *Chart) View() string {
 
 	var chart strings.Builder
 	for _, value := range sampled {
-		normalized := (value - min) / (max - min)
-		level := int(normalized * 8)
-		if level > 8 {
-			level = 8
+		var level int
+		if max == min {
+			// All values are the same, use middle level
+			level = 4
+		} else {
+			normalized := (value - min) / (max - min)
+			level = int(normalized * 8)
+			if level > 8 {
+				level = 8
+			}
+			if level < 0 {
+				level = 0
+			}
 		}
 		chart.WriteString(blockChars[level])
 	}

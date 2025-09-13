@@ -14,6 +14,7 @@ type Activity struct {
 	Duration    time.Duration
 	Distance    float64 // meters
 	Elevation   float64
+	Calories    int // in kilocalories
 	Metrics     ActivityMetrics
 }
 
