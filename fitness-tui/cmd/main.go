@@ -5,6 +5,8 @@ import (
 	"os"
 
 	"github.com/sstent/fitness-tui/internal/config"
+	"github.com/sstent/fitness-tui/internal/garmin"
+	"github.com/sstent/fitness-tui/internal/storage"
 	"github.com/sstent/fitness-tui/internal/tui"
 )
 
@@ -15,9 +17,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Printf("Using storage path: %s\n", cfg.StoragePath)
+	// Initialize storage
+	activityStorage := storage.NewActivityStorage(cfg.StoragePath)
 
-	app := tui.App{}
+	// Initialize Garmin client
+	garminClient := garmin.NewClient(cfg.Garmin.Username, cfg.Garmin.Password, cfg.StoragePath)
+
+	// Create and run the application
+	app := tui.NewApp(activityStorage, garminClient)
 	if err := app.Run(); err != nil {
 		fmt.Printf("Application error: %v\n", err)
 		os.Exit(1)

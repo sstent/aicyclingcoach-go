@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/sstent/fitness-tui/internal/tui/models"
-	"github.com/sstent/go-garth"
 )
 
 type Client struct {

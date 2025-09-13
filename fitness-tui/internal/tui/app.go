@@ -4,14 +4,26 @@ import (
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/sstent/fitness-tui/internal/garmin"
+	"github.com/sstent/fitness-tui/internal/storage"
+	"github.com/sstent/fitness-tui/internal/tui/screens"
 )
 
 type App struct {
 	currentModel tea.Model
 }
 
+func NewApp(activityStorage *storage.ActivityStorage, garminClient *garmin.Client) *App {
+	// Initialize with the activity list screen as the default
+	activityList := screens.NewActivityList(activityStorage, garminClient)
+
+	return &App{
+		currentModel: activityList,
+	}
+}
+
 func (a *App) Init() tea.Cmd {
-	return nil
+	return a.currentModel.Init()
 }
 
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -22,7 +34,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, tea.Quit
 		}
 	}
-	return a, nil
+
+	// Delegate to the current model
+	updatedModel, cmd := a.currentModel.Update(msg)
+	a.currentModel = updatedModel
+	return a, cmd
 }
 
 func (a *App) View() string {
