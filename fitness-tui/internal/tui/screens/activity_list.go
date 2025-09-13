@@ -3,6 +3,7 @@ package screens
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
@@ -94,8 +95,14 @@ func (m *ActivityList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "enter":
 			if selectedItem := m.list.SelectedItem(); selectedItem != nil {
-				// TODO: Navigate to activity detail
-				return m, nil
+				item, ok := selectedItem.(activityItem)
+				if !ok {
+					log.Printf("Failed to cast selected item to activityItem")
+					return m, nil
+				}
+				return m, func() tea.Msg {
+					return ActivitySelectedMsg{Activity: item.activity}
+				}
 			}
 		}
 

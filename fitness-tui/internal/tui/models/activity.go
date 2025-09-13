@@ -19,14 +19,17 @@ type Activity struct {
 }
 
 type ActivityMetrics struct {
-	AvgHeartRate  int
-	MaxHeartRate  int
-	AvgPace       float64 // seconds per km
-	AvgSpeed      float64 // km/h
-	ElevationGain float64 // meters
-	ElevationLoss float64 // meters
-	HeartRateData []float64
-	ElevationData []float64
+	AvgHeartRate    int
+	MaxHeartRate    int
+	AvgPace         float64 // seconds per km
+	AvgSpeed        float64 // km/h
+	ElevationGain   float64 // meters
+	ElevationLoss   float64 // meters
+	TrainingStress  float64 // TSS score
+	RecoveryTime    int     // hours
+	IntensityFactor float64
+	HeartRateData   []float64
+	ElevationData   []float64
 }
 
 func (a *Activity) FormattedDuration() string {

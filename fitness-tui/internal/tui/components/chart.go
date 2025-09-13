@@ -47,26 +47,60 @@ func (c *Chart) View() string {
 	min, max := findMinMax(c.Data)
 	sampled := sampleData(c.Data, c.Width)
 
-	var chart strings.Builder
-	for _, value := range sampled {
-		var level int
+	// Create chart rows from top to bottom
+	rows := make([]string, c.Height)
+	for i := range rows {
+		rows[i] = strings.Repeat(" ", c.Width)
+	}
+
+	// Fill chart based on values
+	for i, value := range sampled {
 		if max == min {
-			// All values are the same, use middle level
-			level = 4
+			// Handle case where all values are equal
+			level := c.Height / 2
+			if level >= c.Height {
+				level = c.Height - 1
+			}
+			rows[level] = replaceAtIndex(rows[level], blockChars[7], i)
 		} else {
 			normalized := (value - min) / (max - min)
-			level = int(normalized * 8)
-			if level > 8 {
-				level = 8
+			level := int(normalized * float64(c.Height-1))
+			if level >= c.Height {
+				level = c.Height - 1
 			}
 			if level < 0 {
 				level = 0
 			}
+			// Draw from bottom up
+			rowIndex := c.Height - 1 - level
+			rows[rowIndex] = replaceAtIndex(rows[rowIndex], blockChars[7], i)
 		}
-		chart.WriteString(blockChars[level])
 	}
 
-	return c.style.Render(fmt.Sprintf("%s\n%s", c.Title, chart.String()))
+	// Add Y-axis labels
+	chartWithLabels := ""
+	if c.Height > 3 {
+		chartWithLabels += fmt.Sprintf("%5.1f ┤\n", max)
+		for i := 1; i < c.Height-1; i++ {
+			chartWithLabels += "     │ " + rows[i] + "\n"
+		}
+		chartWithLabels += fmt.Sprintf("%5.1f ┤ %s", min, rows[c.Height-1])
+	} else {
+		// Fallback for small heights
+		for _, row := range rows {
+			chartWithLabels += row + "\n"
+		}
+	}
+
+	// Add X-axis title
+	return c.style.Render(fmt.Sprintf("%s\n%s", c.Title, chartWithLabels))
+}
+
+// Helper function to replace character at index
+func replaceAtIndex(in string, r string, i int) string {
+	out := []rune(in)
+	out[i] = []rune(r)[0]
+	return string(out)
 }
 
 func findMinMax(data []float64) (float64, float64) {

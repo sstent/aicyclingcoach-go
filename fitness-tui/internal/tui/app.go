@@ -10,7 +10,9 @@ import (
 )
 
 type App struct {
-	currentModel tea.Model
+	currentModel    tea.Model
+	activityStorage *storage.ActivityStorage
+	garminClient    *garmin.Client
 }
 
 func NewApp(activityStorage *storage.ActivityStorage, garminClient *garmin.Client) *App {
@@ -18,7 +20,9 @@ func NewApp(activityStorage *storage.ActivityStorage, garminClient *garmin.Clien
 	activityList := screens.NewActivityList(activityStorage, garminClient)
 
 	return &App{
-		currentModel: activityList,
+		currentModel:    activityList,
+		activityStorage: activityStorage,
+		garminClient:    garminClient,
 	}
 }
 
@@ -33,6 +37,18 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c", "q":
 			return a, tea.Quit
 		}
+	case screens.ActivitySelectedMsg:
+		fmt.Printf("DEBUG: App.Update() - Received ActivitySelectedMsg for: %s\n", msg.Activity.Name)
+		// For now, use empty analysis - we'll implement analysis caching later
+		detail := screens.NewActivityDetail(msg.Activity, "")
+		a.currentModel = detail
+		return a, detail.Init()
+	case screens.BackToListMsg:
+		fmt.Println("DEBUG: App.Update() - Received BackToListMsg")
+		// Re-initialize the activity list when navigating back
+		activityList := screens.NewActivityList(a.activityStorage, a.garminClient)
+		a.currentModel = activityList
+		return a, activityList.Init()
 	}
 
 	// Delegate to the current model
