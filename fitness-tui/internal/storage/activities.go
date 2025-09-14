@@ -20,6 +20,10 @@ func NewActivityStorage(dataDir string) *ActivityStorage {
 	activitiesDir := filepath.Join(dataDir, "activities")
 	os.MkdirAll(activitiesDir, 0755)
 
+	// Create directory for activity files
+	filesDir := filepath.Join(dataDir, "activity_files")
+	os.MkdirAll(filesDir, 0755)
+
 	return &ActivityStorage{
 		dataDir:  dataDir,
 		lockPath: filepath.Join(dataDir, "sync.lock"),
@@ -83,6 +87,20 @@ func (s *ActivityStorage) Save(activity *models.Activity) error {
 	}
 
 	return nil
+}
+
+// SaveActivityFile saves the activity file (GPX/TCX) and returns the relative path to the file
+func (s *ActivityStorage) SaveActivityFile(activity *models.Activity, content []byte, format string) (string, error) {
+	filename := fmt.Sprintf("%s.%s", activity.ID, format)
+	targetPath := filepath.Join(s.dataDir, "activity_files", filename)
+
+	if err := os.WriteFile(targetPath, content, 0644); err != nil {
+		return "", fmt.Errorf("failed to write activity file: %w", err)
+	}
+
+	// Return the relative path within the dataDir
+	relativePath := filepath.Join("activity_files", filename)
+	return relativePath, nil
 }
 
 func (s *ActivityStorage) LoadAll() ([]*models.Activity, error) {

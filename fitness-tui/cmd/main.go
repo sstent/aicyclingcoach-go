@@ -29,7 +29,7 @@ func main() {
 
 	syncCmd := &cobra.Command{
 		Use:   "sync",
-		Short: "Sync activities from Garmin Connect",
+		Short: "Sync activities and files from Garmin Connect",
 		Run: func(cmd *cobra.Command, args []string) {
 			logger := &garmin.CLILogger{}
 			logger.Infof("Starting sync process...")
@@ -43,29 +43,14 @@ func main() {
 			activityStorage := storage.NewActivityStorage(cfg.StoragePath)
 			garminClient := garmin.NewClient(cfg.Garmin.Username, cfg.Garmin.Password, cfg.StoragePath)
 
-			// Authenticate
-			if err := garminClient.Connect(logger); err != nil {
-				logger.Errorf("Authentication failed: %v", err)
-				os.Exit(1)
-			}
-
-			// Get activities
-			activities, err := garminClient.GetActivities(context.Background(), 50, logger)
+			// Use the new Sync method that handles file downloads
+			count, err := garminClient.Sync(context.Background(), activityStorage, logger)
 			if err != nil {
-				logger.Errorf("Failed to fetch activities: %v", err)
+				logger.Errorf("Sync failed: %v", err)
 				os.Exit(1)
 			}
 
-			// Save activities
-			for i, activity := range activities {
-				if err := activityStorage.Save(activity); err != nil {
-					logger.Errorf("Failed to save activity %s: %v", activity.ID, err)
-				} else {
-					logger.Infof("[%d/%d] Saved activity: %s", i+1, len(activities), activity.Name)
-				}
-			}
-
-			logger.Infof("Successfully synced %d activities", len(activities))
+			logger.Infof("Successfully synced %d activities with files", count)
 		},
 	}
 

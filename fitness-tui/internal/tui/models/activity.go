@@ -16,6 +16,7 @@ type Activity struct {
 	Elevation   float64
 	Calories    int // in kilocalories
 	Metrics     ActivityMetrics
+	FilePath    string // Path to original activity file (e.g., GPX/FIT)
 }
 
 type ActivityMetrics struct {

@@ -15,6 +15,8 @@ import (
 type GarminClient interface {
 	Connect(logger Logger) error
 	GetActivities(ctx context.Context, limit int, logger Logger) ([]*models.Activity, error)
+	GetAllActivities(ctx context.Context, logger Logger) ([]*models.Activity, error)
+	DownloadActivityFile(ctx context.Context, activityID string, format string, logger Logger) ([]byte, error)
 }
 
 type Client struct {
@@ -83,7 +85,7 @@ func (c *Client) GetActivities(ctx context.Context, limit int, logger Logger) ([
 	}
 
 	// Get activities from Garmin API
-	garthActivities, err := c.garthClient.GetActivities(limit)
+	garthActivities, err := c.garthClient.GetActivities(limit, 0)
 	if err != nil {
 		logger.Errorf("Failed to fetch activities: %v", err)
 		return nil, err
@@ -137,4 +139,136 @@ func (c *Client) GetActivities(ctx context.Context, limit int, logger Logger) ([
 
 	logger.Infof("Successfully fetched %d activities", len(activities))
 	return activities, nil
+}
+
+func (c *Client) GetAllActivities(ctx context.Context, logger Logger) ([]*models.Activity, error) {
+	if logger == nil {
+		logger = &NoopLogger{}
+	}
+	logger.Infof("Fetching all activities from Garmin Connect")
+
+	if c.garthClient == nil {
+		if err := c.Connect(logger); err != nil {
+			return nil, err
+		}
+	}
+
+	var allActivities []*models.Activity
+	pageSize := 100
+	start := 0
+	timeout := 30 * time.Second
+
+	for {
+		logger.Infof("Fetching activities from offset %d", start)
+
+		// Create context with timeout for this page
+		pageCtx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+
+		garthActivities, err := c.garthClient.GetActivities(pageSize, start)
+		if err != nil {
+			if pageCtx.Err() == context.DeadlineExceeded {
+				logger.Errorf("Timeout fetching activities from offset %d", start)
+			} else {
+				logger.Errorf("Failed to fetch activities: %v", err)
+			}
+			return nil, err
+		}
+
+		if len(garthActivities) == 0 {
+			break
+		}
+
+		logger.Infof("Fetched %d activities from offset %d", len(garthActivities), start)
+
+		for _, ga := range garthActivities {
+			// Skip activities with invalid start time
+			if ga.StartTimeGMT.IsZero() {
+				logger.Warnf("Activity %d has invalid start time", ga.ActivityID)
+				continue
+			}
+
+			activity := &models.Activity{
+				ID:        fmt.Sprintf("%d", ga.ActivityID),
+				Name:      ga.ActivityName,
+				Type:      ga.ActivityType.TypeKey,
+				Date:      ga.StartTimeGMT.Time,
+				Distance:  ga.Distance,
+				Duration:  time.Duration(ga.Duration) * time.Second,
+				Elevation: ga.ElevationGain,
+				Calories:  int(ga.Calories),
+			}
+
+			// Populate metrics
+			if ga.AverageHR > 0 {
+				activity.Metrics.AvgHeartRate = int(ga.AverageHR)
+			}
+			if ga.MaxHR > 0 {
+				activity.Metrics.MaxHeartRate = int(ga.MaxHR)
+			}
+			if ga.AverageSpeed > 0 {
+				activity.Metrics.AvgSpeed = ga.AverageSpeed * 3.6
+			}
+			if ga.ElevationGain > 0 {
+				activity.Metrics.ElevationGain = ga.ElevationGain
+			}
+			if ga.ElevationLoss > 0 {
+				activity.Metrics.ElevationLoss = ga.ElevationLoss
+			}
+			if ga.AverageSpeed > 0 && ga.Distance > 0 {
+				activity.Metrics.AvgPace = (ga.Duration / ga.Distance) * 1000
+			}
+
+			allActivities = append(allActivities, activity)
+		}
+
+		// Break if we got fewer than page size
+		if len(garthActivities) < pageSize {
+			break
+		}
+
+		start += len(garthActivities)
+
+		// Increase timeout for next page in case of large datasets
+		timeout += 10 * time.Second
+	}
+
+	logger.Infof("Successfully fetched %d activities in total", len(allActivities))
+	return allActivities, nil
+}
+
+func (c *Client) DownloadActivityFile(ctx context.Context, activityID string, format string, logger Logger) ([]byte, error) {
+	if logger == nil {
+		logger = &NoopLogger{}
+	}
+	logger.Infof("Downloading %s file for activity %s", format, activityID)
+
+	if c.garthClient == nil {
+		if err := c.Connect(logger); err != nil {
+			return nil, err
+		}
+	}
+
+	// Construct download URL based on format
+	var path string
+	switch format {
+	case "gpx":
+		path = fmt.Sprintf("/download-service/export/gpx/activity/%s", activityID)
+	case "tcx":
+		path = fmt.Sprintf("/download-service/export/tcx/activity/%s", activityID)
+	case "fit":
+		path = fmt.Sprintf("/download-service/files/activity/%s", activityID)
+	default:
+		return nil, fmt.Errorf("unsupported file format: %s", format)
+	}
+
+	// Download file content
+	data, err := c.garthClient.Download(path)
+	if err != nil {
+		logger.Errorf("Failed to download %s file for activity %s: %v", format, activityID, err)
+		return nil, err
+	}
+
+	logger.Infof("Successfully downloaded %s file for activity %s (%d bytes)", format, activityID, len(data))
+	return data, nil
 }

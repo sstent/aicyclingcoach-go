@@ -44,7 +44,7 @@ func NewClient(domain string) (*Client, error) {
 		Domain: domain,
 		HTTPClient: &http.Client{
 			Jar:     jar,
-			Timeout: 30 * time.Second,
+			Timeout: 120 * time.Second, // Increased timeout to 2 minutes
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
 				if len(via) >= 10 {
 					return &errors.APIError{
@@ -160,12 +160,12 @@ func (c *Client) GetUserProfile() (*UserProfile, error) {
 }
 
 // GetActivities retrieves recent activities
-func (c *Client) GetActivities(limit int) ([]types.Activity, error) {
+func (c *Client) GetActivities(limit int, start int) ([]types.Activity, error) {
 	if limit <= 0 {
 		limit = 10
 	}
 
-	activitiesURL := fmt.Sprintf("https://connectapi.%s/activitylist-service/activities/search/activities?limit=%d&start=0", c.Domain, limit)
+	activitiesURL := fmt.Sprintf("https://connectapi.%s/activitylist-service/activities/search/activities?limit=%d&start=%d", c.Domain, limit, start)
 
 	req, err := http.NewRequest("GET", activitiesURL, nil)
 	if err != nil {

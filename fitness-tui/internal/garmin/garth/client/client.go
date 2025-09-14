@@ -160,12 +160,12 @@ func (c *Client) GetUserProfile() (*UserProfile, error) {
 }
 
 // GetActivities retrieves recent activities
-func (c *Client) GetActivities(limit int) ([]types.Activity, error) {
+func (c *Client) GetActivities(limit int, start int) ([]types.Activity, error) {
 	if limit <= 0 {
 		limit = 10
 	}
 
-	activitiesURL := fmt.Sprintf("https://connectapi.%s/activitylist-service/activities/search/activities?limit=%d&start=0", c.Domain, limit)
+	activitiesURL := fmt.Sprintf("https://connectapi.%s/activitylist-service/activities/search/activities?limit=%d&start=%d", c.Domain, limit, start)
 
 	req, err := http.NewRequest("GET", activitiesURL, nil)
 	if err != nil {
