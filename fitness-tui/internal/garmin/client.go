@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/sony/gobreaker"
 	"github.com/sstent/fitness-tui/internal/garmin/garth"
 	"github.com/sstent/fitness-tui/internal/garmin/garth/client"
 	"github.com/sstent/fitness-tui/internal/tui/models"
@@ -15,7 +16,7 @@ import (
 type GarminClient interface {
 	Connect(logger Logger) error
 	GetActivities(ctx context.Context, limit int, logger Logger) ([]*models.Activity, error)
-	GetAllActivities(ctx context.Context, logger Logger) ([]*models.Activity, error)
+	GetAllActivities(ctx context.Context, logger Logger) ([]models.Activity, error)
 	DownloadActivityFile(ctx context.Context, activityID string, format string, logger Logger) ([]byte, error)
 }
 
@@ -24,13 +25,24 @@ type Client struct {
 	password    string
 	storagePath string
 	garthClient *client.Client
+	cb          *gobreaker.CircuitBreaker
 }
 
 func NewClient(username, password, storagePath string) *Client {
+	cb := gobreaker.NewCircuitBreaker(gobreaker.Settings{
+		Name:        "GarminClient",
+		MaxRequests: 1,
+		Interval:    0,
+		Timeout:     30 * time.Second,
+		ReadyToTrip: func(counts gobreaker.Counts) bool {
+			return counts.ConsecutiveFailures >= 5
+		},
+	})
 	return &Client{
 		username:    username,
 		password:    password,
 		storagePath: storagePath,
+		cb:          cb,
 	}
 }
 
@@ -60,7 +72,7 @@ func (c *Client) Connect(logger Logger) error {
 	// Perform login
 	if err := c.garthClient.Login(c.username, c.password); err != nil {
 		logger.Errorf("Garmin authentication failed: %v", err)
-		return err
+		return &AuthenticationError{Err: err}
 	}
 
 	// Save session for future use
@@ -84,12 +96,15 @@ func (c *Client) GetActivities(ctx context.Context, limit int, logger Logger) ([
 		}
 	}
 
-	// Get activities from Garmin API
-	garthActivities, err := c.garthClient.GetActivities(limit, 0)
+	// Wrap API call with circuit breaker
+	resp, err := c.cb.Execute(func() (interface{}, error) {
+		return c.garthClient.GetActivities(limit, 0)
+	})
 	if err != nil {
-		logger.Errorf("Failed to fetch activities: %v", err)
+		logger.Errorf("Failed to fetch activities (circuit breaker): %v", err)
 		return nil, err
 	}
+	garthActivities := resp.([]*garth.Activity)
 
 	// Convert to our internal model
 	activities := make([]*models.Activity, 0, len(garthActivities))
@@ -141,7 +156,7 @@ func (c *Client) GetActivities(ctx context.Context, limit int, logger Logger) ([
 	return activities, nil
 }
 
-func (c *Client) GetAllActivities(ctx context.Context, logger Logger) ([]*models.Activity, error) {
+func (c *Client) GetAllActivities(ctx context.Context, logger Logger) ([]models.Activity, error) {
 	if logger == nil {
 		logger = &NoopLogger{}
 	}
@@ -153,7 +168,7 @@ func (c *Client) GetAllActivities(ctx context.Context, logger Logger) ([]*models
 		}
 	}
 
-	var allActivities []*models.Activity
+	var allActivities []models.Activity
 	pageSize := 100
 	start := 0
 	timeout := 30 * time.Second
@@ -165,15 +180,18 @@ func (c *Client) GetAllActivities(ctx context.Context, logger Logger) ([]*models
 		pageCtx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
 
-		garthActivities, err := c.garthClient.GetActivities(pageSize, start)
+		resp, err := c.cb.Execute(func() (interface{}, error) {
+			return c.garthClient.GetActivities(pageSize, start)
+		})
 		if err != nil {
 			if pageCtx.Err() == context.DeadlineExceeded {
 				logger.Errorf("Timeout fetching activities from offset %d", start)
 			} else {
-				logger.Errorf("Failed to fetch activities: %v", err)
+				logger.Errorf("Failed to fetch activities (circuit breaker): %v", err)
 			}
 			return nil, err
 		}
+		garthActivities := resp.([]*garth.Activity)
 
 		if len(garthActivities) == 0 {
 			break
@@ -188,7 +206,7 @@ func (c *Client) GetAllActivities(ctx context.Context, logger Logger) ([]*models
 				continue
 			}
 
-			activity := &models.Activity{
+			activity := models.Activity{
 				ID:        fmt.Sprintf("%d", ga.ActivityID),
 				Name:      ga.ActivityName,
 				Type:      ga.ActivityType.TypeKey,
@@ -262,12 +280,15 @@ func (c *Client) DownloadActivityFile(ctx context.Context, activityID string, fo
 		return nil, fmt.Errorf("unsupported file format: %s", format)
 	}
 
-	// Download file content
-	data, err := c.garthClient.Download(path)
+	// Wrap download with circuit breaker
+	resp, err := c.cb.Execute(func() (interface{}, error) {
+		return c.garthClient.Download(path)
+	})
 	if err != nil {
-		logger.Errorf("Failed to download %s file for activity %s: %v", format, activityID, err)
+		logger.Errorf("Failed to download %s file for activity %s (circuit breaker): %v", format, activityID, err)
 		return nil, err
 	}
+	data := resp.([]byte)
 
 	logger.Infof("Successfully downloaded %s file for activity %s (%d bytes)", format, activityID, len(data))
 	return data, nil

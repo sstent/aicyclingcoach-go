@@ -2,6 +2,7 @@ package garmin
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/sstent/fitness-tui/internal/storage"
@@ -17,6 +18,9 @@ func (c *Client) Sync(ctx context.Context, storage *storage.ActivityStorage, log
 	logger.Infof("Authenticating with Garmin Connect...")
 	if err := c.Connect(logger); err != nil {
 		logger.Errorf("Authentication failed: %v", err)
+		if _, ok := err.(*AuthenticationError); ok {
+			return 0, fmt.Errorf("authentication failed: please check your credentials and try again")
+		}
 		return 0, err
 	}
 	logger.Infof("Authentication successful")
@@ -32,7 +36,8 @@ func (c *Client) Sync(ctx context.Context, storage *storage.ActivityStorage, log
 
 	// Download files for each activity
 	downloadedFiles := 0
-	for i, activity := range activities {
+	for i := range activities {
+		activity := &activities[i]
 		// Check if context has been cancelled
 		select {
 		case <-timeoutCtx.Done():
@@ -103,6 +108,5 @@ func (c *Client) Sync(ctx context.Context, storage *storage.ActivityStorage, log
 		}
 	}
 
-	logger.Infof("Sync complete. Downloaded %d new files for %d activities", downloadedFiles, len(activities))
-	return len(activities), nil
+	return downloadedFiles, nil
 }

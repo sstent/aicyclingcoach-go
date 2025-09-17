@@ -1,290 +1,225 @@
-// internal/tui/components/chart.go
 package components
 
 import (
 	"fmt"
+	"math"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/sstent/fitness-tui/internal/types"
 )
 
-const (
-	BlockEmpty = " "
-	Block1     = "▁"
-	Block2     = "▂"
-	Block3     = "▃"
-	Block4     = "▄"
-	Block5     = "▅"
-	Block6     = "▆"
-	Block7     = "▇"
-	Block8     = "█"
-)
-
-var blockChars = []string{BlockEmpty, Block1, Block2, Block3, Block4, Block5, Block6, Block7, Block8}
-
+// Chart represents an ASCII chart component
 type Chart struct {
-	Width    int
-	Height   int
-	Data     []float64
-	Title    string
-	Color    lipgloss.Color
-	ShowAxes bool
-	ShowGrid bool
-	style    lipgloss.Style
+	Data        []float64
+	Title       string
+	Width       int
+	Height      int
+	Color       lipgloss.Color
+	Min, Max    float64
+	Downsampled []types.DownsampledPoint
+	Unit        string
+	Mode        string // "bar" or "sparkline"
+	XLabels     []string
+	YMax        float64
 }
 
-func NewChart(data []float64, width, height int, title string) *Chart {
-	return &Chart{
-		Data:     data,
-		Width:    width,
-		Height:   height,
-		Title:    title,
-		Color:    lipgloss.Color("#00D4FF"), // Default bright cyan
-		ShowAxes: true,
-		ShowGrid: false,
-		style:    lipgloss.NewStyle().Padding(0, 1),
+// NewChart creates a new chart instance
+func NewChart(data []float64, title, unit string, width, height int, color lipgloss.Color) *Chart {
+	c := &Chart{
+		Data:   data,
+		Title:  title,
+		Width:  width,
+		Height: height,
+		Color:  color,
+		Unit:   unit,
+		Mode:   "sparkline",
 	}
-}
 
-func NewColoredChart(data []float64, width, height int, title string, color lipgloss.Color) *Chart {
-	return &Chart{
-		Data:     data,
-		Width:    width,
-		Height:   height,
-		Title:    title,
-		Color:    color,
-		ShowAxes: true,
-		ShowGrid: false,
-		style:    lipgloss.NewStyle().Padding(0, 1),
+	if len(data) > 0 {
+		// Use downsampled data for min/max to improve performance
+		// Using empty timestamps array since we only need value downsampling
+		downsampled := types.DownsampleLTTB(data, make([]time.Time, len(data)), width)
+		c.Downsampled = downsampled
+		values := make([]float64, len(downsampled))
+		for i, point := range downsampled {
+			values[i] = point.Value
+		}
+		c.Min, c.Max = minMax(values)
 	}
-}
-
-func (c *Chart) WithColor(color lipgloss.Color) *Chart {
-	c.Color = color
 	return c
 }
 
-func (c *Chart) WithGrid(showGrid bool) *Chart {
-	c.ShowGrid = showGrid
+// NewBarChart creates a bar chart with axis labels
+func NewBarChart(data []float64, title string, width, height int, color lipgloss.Color, xLabels []string, yMax float64) *Chart {
+	c := NewChart(data, title, "", width, height, color)
+	c.Mode = "bar"
+	c.XLabels = xLabels
+	c.YMax = yMax
 	return c
 }
 
-func (c *Chart) WithAxes(showAxes bool) *Chart {
-	c.ShowAxes = showAxes
-	return c
-}
-
+// View renders the chart
 func (c *Chart) View() string {
 	if len(c.Data) == 0 {
-		return c.style.Render(lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#888888")).
-			Italic(true).
-			Render("No data available"))
+		return c.renderNoData()
 	}
 
-	min, max := findMinMax(c.Data)
-	sampled := sampleData(c.Data, c.Width-8) // Account for Y-axis labels
-
-	var content strings.Builder
-
-	// Add title with color
-	if c.Title != "" {
-		titleStyle := lipgloss.NewStyle().
-			Foreground(c.Color).
-			Bold(true).
-			MarginBottom(1)
-		content.WriteString(titleStyle.Render(c.Title))
-		content.WriteString("\n")
+	if c.Width <= 10 || c.Height <= 4 {
+		return c.renderTooSmall()
 	}
 
-	// Create the chart
-	chartContent := c.renderChart(sampled, min, max)
-	content.WriteString(chartContent)
+	if c.Mode == "bar" && c.YMax == 0 {
+		return c.renderNoData()
+	}
 
-	return c.style.Render(content.String())
+	// Recalculate if dimensions changed
+	if len(c.Downsampled) != c.Width {
+		c.Downsampled = types.DownsampleLTTB(c.Data, make([]time.Time, len(c.Data)), c.Width)
+		values := make([]float64, len(c.Downsampled))
+		for i, point := range c.Downsampled {
+			values[i] = point.Value
+		}
+		c.Min, c.Max = minMax(values)
+	}
+
+	return lipgloss.NewStyle().
+		MaxWidth(c.Width).
+		Render(c.renderTitle() + "\n" + c.renderChart())
 }
 
-func (c *Chart) renderChart(data []float64, min, max float64) string {
-	if c.Height < 3 {
-		// Fallback for very small charts
-		return c.renderMiniChart(data, min, max)
+func (c *Chart) renderTitle() string {
+	return lipgloss.NewStyle().
+		Bold(true).
+		Foreground(c.Color).
+		Render(c.Title)
+}
+
+func (c *Chart) renderChart() string {
+	if c.Max == c.Min && c.Mode != "bar" {
+		return c.renderConstantData()
 	}
 
-	var content strings.Builder
-	chartHeight := c.Height - 1 // Reserve space for X-axis
-	chartWidth := len(data)
-
-	// Create chart grid
-	rows := make([][]rune, chartHeight)
-	for i := range rows {
-		rows[i] = make([]rune, chartWidth)
-		for j := range rows[i] {
-			if c.ShowGrid && (i%2 == 0 || j%5 == 0) {
-				rows[i][j] = '·'
-			} else {
-				rows[i][j] = ' '
-			}
-		}
+	if c.Mode == "bar" {
+		return c.renderBarChart()
 	}
+	return c.renderSparkline()
+}
 
-	// Plot data points
-	for i, value := range data {
-		if i >= chartWidth {
+func (c *Chart) renderBarChart() string {
+	var sb strings.Builder
+	chartHeight := c.Height - 3 // Reserve space for title and labels
+
+	// Calculate scaling factor
+	maxValue := c.YMax
+	if maxValue == 0 {
+		maxValue = c.Max
+	}
+	scale := float64(chartHeight-1) / maxValue
+
+	// Y-axis labels
+	yIncrement := maxValue / float64(chartHeight-1)
+	for i := chartHeight - 1; i >= 0; i-- {
+		label := fmt.Sprintf("%3.0f │", maxValue-(yIncrement*float64(i)))
+		sb.WriteString(label)
+		if i == 0 {
+			sb.WriteString(" " + strings.Repeat("─", c.Width))
 			break
 		}
 
-		var level int
-		if max == min {
-			level = chartHeight / 2
-		} else {
-			normalized := (value - min) / (max - min)
-			level = int(normalized * float64(chartHeight-1))
-		}
-
-		if level >= chartHeight {
-			level = chartHeight - 1
-		}
-		if level < 0 {
-			level = 0
-		}
-
-		// Draw from bottom up
-		rowIndex := chartHeight - 1 - level
-
-		// Use different block characters based on the data density
-		var blockIndex int
-		if max == min {
-			blockIndex = 3 // Use Block4 (▄) for constant data
-		} else {
-			normalized := (value - min) / (max - min)
-			blockIndex = int(normalized * 7)
-			if blockIndex > 7 {
-				blockIndex = 7
-			}
-			if blockIndex < 0 {
-				blockIndex = 0
+		// Draw bars
+		for _, point := range c.Downsampled {
+			barHeight := int(math.Round(point.Value * scale))
+			if barHeight >= i {
+				sb.WriteString("#")
+			} else {
+				sb.WriteString(" ")
 			}
 		}
-		rows[rowIndex][i] = []rune(blockChars[blockIndex+1])[0]
+		sb.WriteString("\n")
 	}
 
-	// Render chart with Y-axis labels
-	if c.ShowAxes {
-		for i := 0; i < chartHeight; i++ {
-			// Y-axis label
-			yValue := max - (float64(i)/float64(chartHeight-1))*(max-min)
-			label := fmt.Sprintf("%6.1f", yValue)
-
-			// Y-axis line and data
-			line := fmt.Sprintf("%s │", label)
-
-			// Color the chart data
-			chartLine := string(rows[i])
-			coloredLine := lipgloss.NewStyle().
-				Foreground(c.Color).
-				Render(chartLine)
-
-			content.WriteString(line + coloredLine + "\n")
+	// X-axis labels
+	sb.WriteString("\n    ")
+	for i, label := range c.XLabels {
+		if i >= len(c.Downsampled) {
+			break
 		}
-
-		// X-axis
-		content.WriteString("       └")
-		content.WriteString(strings.Repeat("─", chartWidth))
-		content.WriteString("\n")
-
-		// X-axis labels (show first, middle, last)
-		spacing := chartWidth/2 - 1
-		if spacing < 0 {
-			spacing = 0
+		if i == 0 {
+			sb.WriteString(" ")
 		}
-		xAxisLabels := fmt.Sprintf("       %s%s%s",
-			"0",
-			strings.Repeat(" ", spacing),
-			fmt.Sprintf("%d", len(c.Data)))
-
-		if chartWidth > 10 {
-			midPoint := chartWidth / 2
-			leftSpacing := midPoint - 2
-			rightSpacing := midPoint - 2
-			if leftSpacing < 0 {
-				leftSpacing = 0
-			}
-			if rightSpacing < 0 {
-				rightSpacing = 0
-			}
-			xAxisLabels = fmt.Sprintf("       0%s%d%s%d",
-				strings.Repeat(" ", leftSpacing),
-				len(c.Data)/2,
-				strings.Repeat(" ", rightSpacing),
-				len(c.Data))
-		}
-
-		content.WriteString(lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#888888")).
-			Render(xAxisLabels))
-	} else {
-		// Simple chart without axes
-		for i := 0; i < chartHeight; i++ {
-			chartLine := string(rows[i])
-			coloredLine := lipgloss.NewStyle().
-				Foreground(c.Color).
-				Render(chartLine)
-			content.WriteString(coloredLine + "\n")
-		}
+		sb.WriteString(fmt.Sprintf("%-*s", c.Width/len(c.XLabels), label))
 	}
 
-	return content.String()
+	return sb.String()
 }
 
-func (c *Chart) renderMiniChart(data []float64, min, max float64) string {
-	var result strings.Builder
+func (c *Chart) renderSparkline() string {
+	var sb strings.Builder
+	chartHeight := c.Height - 3 // Reserve rows for title and labels
 
-	for _, value := range data {
-		var blockIndex int
-		if max == min {
-			blockIndex = 4 // Middle block
-		} else {
-			normalized := (value - min) / (max - min)
-			blockIndex = int(normalized * 7)
-			if blockIndex > 7 {
-				blockIndex = 7
-			}
-			if blockIndex < 0 {
-				blockIndex = 0
-			}
+	minLabel := fmt.Sprintf("%.0f%s", c.Min, c.Unit)
+	maxLabel := fmt.Sprintf("%.0f%s", c.Max, c.Unit)
+	sb.WriteString(fmt.Sprintf("%5s ", maxLabel))
+
+	for i, point := range c.Downsampled {
+		if i >= c.Width {
+			break
 		}
 
-		block := lipgloss.NewStyle().
-			Foreground(c.Color).
-			Render(blockChars[blockIndex+1])
-		result.WriteString(block)
+		normalized := (point.Value - c.Min) / (c.Max - c.Min)
+		barHeight := int(math.Round(normalized * float64(chartHeight-1)))
+		sb.WriteString(c.renderBar(barHeight, chartHeight))
 	}
+	sb.WriteString("\n")
 
-	return result.String()
+	// Add X axis with min label
+	sb.WriteString(fmt.Sprintf("%5s ", minLabel))
+	sb.WriteString(strings.Repeat("─", c.Width))
+	return sb.String()
 }
 
-// Helper functions for min/max integers
-func minInt(a, b int) int {
-	if a < b {
-		return a
+func (c *Chart) renderBar(height, maxHeight int) string {
+	if height <= 0 {
+		return " "
 	}
-	return b
+
+	// Use Unicode block characters for better resolution
+	blocks := []string{" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"}
+	index := int(float64(height) / float64(maxHeight) * 8)
+	if index >= len(blocks) {
+		index = len(blocks) - 1
+	}
+
+	return lipgloss.NewStyle().
+		Foreground(c.Color).
+		Render(blocks[index])
 }
 
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
+func (c *Chart) renderNoData() string {
+	return lipgloss.NewStyle().
+		Foreground(lipgloss.Color("240")).
+		Render(fmt.Sprintf("%s: No data", c.Title))
 }
 
-// Helper functions remain the same
-func findMinMax(data []float64) (float64, float64) {
+func (c *Chart) renderTooSmall() string {
+	return lipgloss.NewStyle().
+		Foreground(lipgloss.Color("196")).
+		Render(fmt.Sprintf("%s: Terminal too small", c.Title))
+}
+
+func (c *Chart) renderConstantData() string {
+	return lipgloss.NewStyle().
+		Foreground(lipgloss.Color("214")).
+		Render(fmt.Sprintf("%s: Constant value %.2f", c.Title, c.Data[0]))
+}
+
+func minMax(data []float64) (min, max float64) {
 	if len(data) == 0 {
 		return 0, 0
 	}
-
-	min, max := data[0], data[0]
+	min, max = data[0], data[0]
 	for _, v := range data {
 		if v < min {
 			min = v
@@ -294,54 +229,4 @@ func findMinMax(data []float64) (float64, float64) {
 		}
 	}
 	return min, max
-}
-
-func sampleData(data []float64, targetLength int) []float64 {
-	if len(data) <= targetLength || targetLength <= 0 {
-		return data
-	}
-
-	sampled := make([]float64, targetLength)
-	ratio := float64(len(data)) / float64(targetLength)
-
-	for i := 0; i < targetLength; i++ {
-		index := int(float64(i) * ratio)
-		if index >= len(data) {
-			index = len(data) - 1
-		}
-		sampled[i] = data[index]
-	}
-	return sampled
-}
-
-// Sparkline creates a simple inline chart
-func (c *Chart) Sparkline() string {
-	if len(c.Data) == 0 {
-		return lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#888888")).
-			Render("─────")
-	}
-
-	minVal, maxVal := findMinMax(c.Data)
-	var result strings.Builder
-
-	for _, value := range c.Data {
-		var blockIndex int
-		if maxVal == minVal {
-			blockIndex = 4
-		} else {
-			normalized := (value - minVal) / (maxVal - minVal)
-			blockIndex = int(normalized * 7)
-			if blockIndex > 7 {
-				blockIndex = 7
-			}
-		}
-
-		block := lipgloss.NewStyle().
-			Foreground(c.Color).
-			Render(blockChars[blockIndex+1])
-		result.WriteString(block)
-	}
-
-	return result.String()
 }

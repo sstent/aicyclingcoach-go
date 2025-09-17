@@ -24,12 +24,15 @@ type Help struct {
 func NewHelp() *Help {
 	items := []list.Item{
 		helpItem{"↑↓", "Navigate items"},
-		helpItem{"Enter", "Select item"},
-		helpItem{"s", "Sync activities"},
-		helpItem{"a", "View activities"},
+		helpItem{"Enter", "View activity details"},
+		helpItem{"s", "Sync activities with Garmin Connect"},
+		helpItem{"a", "Analyze selected activity (list view)"},
 		helpItem{"c", "View charts"},
 		helpItem{"q", "Return/Quit"},
 		helpItem{"h/?", "Show this help"},
+		helpItem{"a (detail view)", "Analyze activity in detail view"},
+		helpItem{"r (detail view)", "Retry analysis in detail view"},
+		helpItem{"Analysis Workflow", "1. Select activity\n2. Press 'a'\n3. System checks cache\n4. Fetches analysis if needed\n5. Displays insights"},
 	}
 
 	delegate := list.NewDefaultDelegate()
@@ -40,7 +43,7 @@ func NewHelp() *Help {
 		Foreground(lipgloss.Color("243"))
 
 	l := list.New(items, delegate, 0, 0)
-	l.Title = "Keyboard Shortcuts"
+	l.Title = "Keyboard Shortcuts and Features"
 	l.Styles.Title = lipgloss.NewStyle().
 		Foreground(lipgloss.Color("62")).
 		Bold(true).

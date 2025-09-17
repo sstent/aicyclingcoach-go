@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/sstent/fitness-tui/internal/config"
 	"github.com/sstent/fitness-tui/internal/garmin"
 	"github.com/sstent/fitness-tui/internal/storage"
 	"github.com/sstent/fitness-tui/internal/tui/screens"
@@ -21,13 +22,13 @@ type App struct {
 	screenStack     []tea.Model           // Screen navigation stack
 }
 
-func NewApp(activityStorage *storage.ActivityStorage, garminClient *garmin.Client, logger garmin.Logger) *App {
+func NewApp(activityStorage *storage.ActivityStorage, garminClient *garmin.Client, logger garmin.Logger, config *config.Config) *App {
 	if logger == nil {
 		logger = &garmin.NoopLogger{}
 	}
 
 	// Initialize with a placeholder screen - actual size will be set by WindowSizeMsg
-	activityList := screens.NewActivityList(activityStorage, garminClient)
+	activityList := screens.NewActivityList(activityStorage, garminClient, config)
 
 	app := &App{
 		currentModel:    activityList,
@@ -81,7 +82,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case screens.ActivitySelectedMsg:
 		a.logger.Debugf("App.Update() - Received ActivitySelectedMsg for: %s", msg.Activity.Name)
 		// Create new activity detail screen
-		detail := screens.NewActivityDetail(msg.Activity, "", a.logger)
+		detail := screens.NewActivityDetail(msg.Activity, "", msg.Config, a.logger)
 		a.pushScreen(detail)
 		return a, detail.Init()
 

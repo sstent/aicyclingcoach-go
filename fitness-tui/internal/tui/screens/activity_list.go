@@ -9,10 +9,12 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/sstent/fitness-tui/internal/config"
 	"github.com/sstent/fitness-tui/internal/garmin"
 	"github.com/sstent/fitness-tui/internal/storage"
 	"github.com/sstent/fitness-tui/internal/tui/layout"
 	"github.com/sstent/fitness-tui/internal/tui/models"
+	"github.com/sstent/fitness-tui/internal/tui/styles"
 )
 
 type ActivityList struct {
@@ -20,7 +22,9 @@ type ActivityList struct {
 	totalGarminActivities int // Added for sync status
 	storage               *storage.ActivityStorage
 	garminClient          garmin.GarminClient
+	config                *config.Config
 	layout                *layout.Layout
+	styles                *styles.Styles
 	selectedIndex         int
 	statusMsg             string
 	isLoading             bool
@@ -28,11 +32,13 @@ type ActivityList struct {
 	scrollOffset          int
 }
 
-func NewActivityList(storage *storage.ActivityStorage, client garmin.GarminClient) *ActivityList {
+func NewActivityList(storage *storage.ActivityStorage, client garmin.GarminClient, config *config.Config) *ActivityList {
 	return &ActivityList{
 		storage:      storage,
 		garminClient: client,
+		config:       config,
 		layout:       layout.NewLayout(80, 24), // Default size
+		styles:       styles.NewStyles(),
 	}
 }
 
@@ -45,7 +51,8 @@ func (m *ActivityList) Init() tea.Cmd {
 func (m *ActivityList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.layout = layout.NewLayout(msg.Width, msg.Height)
+		m.layout.Width = msg.Width
+		m.layout.Height = msg.Height
 		return m, nil
 
 	case tea.KeyMsg:
@@ -86,7 +93,10 @@ func (m *ActivityList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(m.activities) > 0 && m.selectedIndex < len(m.activities) {
 				activity := m.activities[m.selectedIndex]
 				return m, func() tea.Msg {
-					return ActivitySelectedMsg{Activity: activity}
+					return ActivitySelectedMsg{
+						Activity: activity,
+						Config:   m.config,
+					}
 				}
 			}
 		}
@@ -140,7 +150,7 @@ func (m *ActivityList) View() string {
 	if m.isLoading {
 		breadcrumb += " (Syncing...)"
 	}
-	content.WriteString(m.layout.HeaderPanel("Fitness Activities", breadcrumb))
+	content.WriteString(m.styles.HeaderPanel.Render(fmt.Sprintf("%s\n%s", "Fitness Activities", breadcrumb)))
 
 	// Removed stats panel per user request
 
@@ -159,7 +169,7 @@ func (m *ActivityList) View() string {
 		listContent := lipgloss.NewStyle().
 			Height(availableHeight).
 			Render(m.renderActivityList())
-		content.WriteString(m.layout.MainPanel(listContent, m.layout.Width-6))
+		content.WriteString(m.styles.MainPanel.Render(listContent))
 	} else {
 		// Two columns - use full available height
 		listContent := lipgloss.NewStyle().
@@ -177,7 +187,7 @@ func (m *ActivityList) View() string {
 	}
 
 	// Navigation bar
-	navItems := []layout.NavItem{
+	navItems := []styles.NavItem{
 		{Label: "Activities", Key: "a"},
 		{Label: "Routes", Key: "r"},
 		{Label: "Plans", Key: "p"},
@@ -187,8 +197,8 @@ func (m *ActivityList) View() string {
 
 	// Add sync status to nav bar
 	syncStatus := fmt.Sprintf("Synced: %d/%d", len(m.activities), m.totalGarminActivities)
-	navBar := m.layout.NavigationBar(navItems, 0)
-	statusStyle := lipgloss.NewStyle().Foreground(layout.MutedText).Align(lipgloss.Right)
+	navBar := m.styles.NavigationBar(navItems, 0)
+	statusStyle := lipgloss.NewStyle().Foreground(m.styles.MutedText).Align(lipgloss.Right)
 	statusText := statusStyle.Render(syncStatus)
 	navBar = lipgloss.JoinHorizontal(lipgloss.Bottom, navBar, statusText)
 	content.WriteString(navBar)
@@ -198,9 +208,9 @@ func (m *ActivityList) View() string {
 	if m.statusMsg != "" {
 		helpText = m.statusMsg + " • " + helpText
 	}
-	content.WriteString(m.layout.HelpText(helpText))
+	content.WriteString(m.styles.HelpText.Render(helpText))
 
-	return m.layout.MainContainer().Render(content.String())
+	return m.styles.MainContainer.Render(content.String())
 }
 
 // Removed stats panel per user request
@@ -208,7 +218,7 @@ func (m *ActivityList) View() string {
 func (m *ActivityList) renderActivityList() string {
 	if len(m.activities) == 0 {
 		emptyStyle := lipgloss.NewStyle().
-			Foreground(layout.MutedText).
+			Foreground(m.styles.MutedText).
 			Align(lipgloss.Center).
 			Width(m.layout.Width*2/3 - 6).
 			Height(10)
@@ -217,7 +227,7 @@ func (m *ActivityList) renderActivityList() string {
 
 	var content strings.Builder
 	content.WriteString(lipgloss.NewStyle().
-		Foreground(layout.WhiteText).
+		Foreground(m.styles.LightText).
 		Bold(true).
 		MarginBottom(1).
 		Render("Recent Activities"))
@@ -244,11 +254,11 @@ func (m *ActivityList) renderActivityList() string {
 
 	// Activity type color mapping
 	typeColors := map[string]lipgloss.Color{
-		"cycling":  layout.PrimaryBlue,
-		"running":  layout.PrimaryGreen,
-		"swimming": layout.PrimaryCyan,
-		"hiking":   layout.PrimaryOrange,
-		"walking":  layout.PrimaryYellow,
+		"cycling":  m.styles.PrimaryBlue,
+		"running":  m.styles.PrimaryGreen,
+		"swimming": m.styles.PrimaryBlue,
+		"hiking":   m.styles.PrimaryOrange,
+		"walking":  m.styles.PrimaryYellow,
 	}
 
 	for i := startIdx; i < endIdx; i++ {
@@ -258,7 +268,7 @@ func (m *ActivityList) renderActivityList() string {
 		// Get color for activity type, default to white
 		color, ok := typeColors[strings.ToLower(activity.Type)]
 		if !ok {
-			color = layout.WhiteText
+			color = m.styles.LightText
 		}
 
 		// Format activity line
@@ -267,9 +277,9 @@ func (m *ActivityList) renderActivityList() string {
 		nameStr := activity.Name
 
 		// Apply coloring
-		dateStyle := lipgloss.NewStyle().Foreground(layout.MutedText)
+		dateStyle := lipgloss.NewStyle().Foreground(m.styles.MutedText)
 		typeStyle := lipgloss.NewStyle().Foreground(color).Bold(true)
-		nameStyle := lipgloss.NewStyle().Foreground(layout.LightText)
+		nameStyle := lipgloss.NewStyle().Foreground(m.styles.LightText)
 
 		if isSelected {
 			dateStyle = dateStyle.Bold(true)
@@ -291,7 +301,7 @@ func (m *ActivityList) renderActivityList() string {
 	// Scroll indicators
 	if startIdx > 0 {
 		content.WriteString(lipgloss.NewStyle().
-			Foreground(layout.PrimaryBlue).
+			Foreground(m.styles.PrimaryBlue).
 			Align(lipgloss.Center).
 			Render("↑ More activities above"))
 		content.WriteString("\n")
@@ -299,7 +309,7 @@ func (m *ActivityList) renderActivityList() string {
 
 	if endIdx < len(m.activities) {
 		content.WriteString(lipgloss.NewStyle().
-			Foreground(layout.PrimaryBlue).
+			Foreground(m.styles.PrimaryBlue).
 			Align(lipgloss.Center).
 			Render("↓ More activities below"))
 		content.WriteString("\n")
@@ -313,7 +323,7 @@ func (m *ActivityList) renderSummaryPanel() string {
 
 	// Activity Summary
 	content.WriteString(lipgloss.NewStyle().
-		Foreground(layout.WhiteText).
+		Foreground(m.styles.LightText).
 		Bold(true).
 		MarginBottom(1).
 		Render("Activity Summary"))
@@ -324,13 +334,13 @@ func (m *ActivityList) renderSummaryPanel() string {
 
 		// Selected activity details
 		content.WriteString(lipgloss.NewStyle().
-			Foreground(layout.PrimaryYellow).
+			Foreground(m.styles.PrimaryYellow).
 			Bold(true).
 			Render(activity.Name))
 		content.WriteString("\n")
 
 		content.WriteString(lipgloss.NewStyle().
-			Foreground(layout.LightText).
+			Foreground(m.styles.LightText).
 			Render(activity.Date.Format("Monday, January 2, 2006")))
 		content.WriteString("\n\n")
 
@@ -340,17 +350,17 @@ func (m *ActivityList) renderSummaryPanel() string {
 			value string
 			color lipgloss.Color
 		}{
-			{"Duration", activity.FormattedDuration(), layout.PrimaryGreen},
-			{"Distance", activity.FormattedDistance(), layout.PrimaryBlue},
-			{"Avg Pace", activity.FormattedPace(), layout.PrimaryOrange},
-			{"Calories", fmt.Sprintf("%d kcal", activity.Calories), layout.PrimaryPink},
-			{"Avg HR", fmt.Sprintf("%d bpm", activity.Metrics.AvgHeartRate), layout.PrimaryPurple},
-			{"Elevation", fmt.Sprintf("%.0f m", activity.Metrics.ElevationGain), layout.PrimaryGreen},
+			{"Duration", activity.FormattedDuration(), m.styles.PrimaryGreen},
+			{"Distance", activity.FormattedDistance(), m.styles.PrimaryBlue},
+			{"Avg Pace", activity.FormattedPace(), m.styles.PrimaryOrange},
+			{"Calories", fmt.Sprintf("%d kcal", activity.Calories), m.styles.PrimaryPink},
+			{"Avg HR", fmt.Sprintf("%d bpm", activity.Metrics.AvgHeartRate), m.styles.PrimaryPurple},
+			{"Elevation", fmt.Sprintf("%.0f m", activity.Metrics.ElevationGain), m.styles.PrimaryGreen},
 		}
 
 		for _, metric := range metrics {
 			content.WriteString(lipgloss.NewStyle().
-				Foreground(layout.MutedText).
+				Foreground(m.styles.MutedText).
 				Render(metric.label + ": "))
 			content.WriteString(lipgloss.NewStyle().
 				Foreground(metric.color).
@@ -361,12 +371,12 @@ func (m *ActivityList) renderSummaryPanel() string {
 
 		content.WriteString("\n")
 		content.WriteString(lipgloss.NewStyle().
-			Foreground(layout.MutedText).
+			Foreground(m.styles.MutedText).
 			Italic(true).
 			Render("Press Enter to view detailed analysis"))
 	} else {
 		content.WriteString(lipgloss.NewStyle().
-			Foreground(layout.MutedText).
+			Foreground(m.styles.MutedText).
 			Render("Select an activity to view summary"))
 	}
 
@@ -391,6 +401,7 @@ func max(a, b int) int {
 // Messages and commands (unchanged)
 type ActivitySelectedMsg struct {
 	Activity *models.Activity
+	Config   *config.Config
 }
 
 type activitiesLoadedMsg struct {

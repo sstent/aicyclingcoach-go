@@ -1,0 +1,23 @@
+{
+  "mcpServers": {
+    "context7": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@upstash/context7-mcp"
+      ],
+      "env": {
+        "DEFAULT_MINIMUM_TOKENS": ""
+      }
+    },
+    "penpot": {
+      "command": "uvx",
+      "args": ["penpot-mcp"],
+      "env": {
+        "PENPOT_API_URL": "https://design.penpot.app/api",
+        "PENPOT_USERNAME": "stuart.stent@gmail.com",
+        "PENPOT_PASSWORD": "Upriver!Magnetize!Bling2"
+      }
+    }
+  }
+}

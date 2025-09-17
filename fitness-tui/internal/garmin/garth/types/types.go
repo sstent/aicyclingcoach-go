@@ -115,3 +115,17 @@ type OAuthConsumer struct {
 	ConsumerKey    string `json:"consumer_key"`
 	ConsumerSecret string `json:"consumer_secret"`
 }
+
+// ToActivityType maps Garmin TypeKey to internal activity type
+func (a *ActivityType) ToActivityType() string {
+	switch a.TypeKey {
+	case "cycling", "road_biking", "mountain_biking":
+		return "cycling"
+	case "running", "treadmill_running":
+		return "running"
+	case "hiking":
+		return "hiking"
+	default:
+		return "other"
+	}
+}

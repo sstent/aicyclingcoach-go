@@ -131,6 +131,27 @@ func (s *ActivityStorage) LoadAll() ([]*models.Activity, error) {
 	return activities, nil
 }
 
+func (s *ActivityStorage) Get(id string) (*models.Activity, error) {
+	activitiesDir := filepath.Join(s.dataDir, "activities")
+	files, err := os.ReadDir(activitiesDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read activities directory: %w", err)
+	}
+
+	for _, file := range files {
+		if filepath.Ext(file.Name()) != ".json" {
+			continue
+		}
+
+		// Check if filename contains the activity ID
+		if strings.Contains(file.Name(), id) {
+			return s.loadActivity(filepath.Join(activitiesDir, file.Name()))
+		}
+	}
+
+	return nil, fmt.Errorf("activity %s not found", id)
+}
+
 func (s *ActivityStorage) loadActivity(path string) (*models.Activity, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

@@ -10,8 +10,9 @@ require (
 	github.com/spf13/cobra v1.8.0
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1
-	garmin-connect v0.0.0
 )
+
+require github.com/sony/gobreaker v1.0.0
 
 require (
 	github.com/atotto/clipboard v0.1.4 // indirect
@@ -25,7 +26,6 @@ require (
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/joho/godotenv v1.5.1 // indirect
 	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-localereader v0.0.1 // indirect
@@ -48,13 +48,6 @@ require (
 	golang.org/x/net v0.33.0 // indirect
 	golang.org/x/sys v0.36.0 // indirect
 	golang.org/x/text v0.28.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
+	gopkg.in/yaml.v3 v3.0.1
 )
 
-replace github.com/sstent/fitness-tui/internal/garmin => ./internal/garmin
-
-replace github.com/sstent/fitness-tui/internal/storage => ./internal/storage
-
-replace github.com/sstent/fitness-tui/internal/tui/models => ./internal/tui/models
-
-replace garmin-connect => ../go-garth

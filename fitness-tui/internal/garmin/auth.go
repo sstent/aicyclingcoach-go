@@ -27,7 +27,7 @@ func (c *Client) Authenticate(logger Logger) error {
 		// Perform authentication if no session exists
 		if err := garthClient.Login(c.username, c.password); err != nil {
 			logger.Errorf("Authentication failed: %v", err)
-			return fmt.Errorf("authentication failed: %w", err)
+			return &AuthenticationError{Err: err}
 		}
 
 		// Save session for future use
