@@ -1,63 +1,84 @@
 package types
 
-// Downsampler implements the Largest-Triangle-Three-Buckets algorithm
-type Downsampler struct{}
+import "time"
 
-// NewDownsampler creates a new Downsampler instance
-func NewDownsampler() *Downsampler {
-	return &Downsampler{}
+type DownsampledPoint struct {
+	Timestamp time.Time
+	Value     float64
 }
 
-// Process downsamples data using Largest-Triangle-Three-Buckets algorithm
-func (d *Downsampler) Process(data []float64, threshold int) []float64 {
-	if len(data) <= threshold || threshold <= 0 {
-		return data
+// DownsampleLTTB implements the Largest Triangle Three Buckets algorithm
+// for time series downsampling. This is a corrected version that properly
+// uses the current module path.
+func DownsampleLTTB(data []float64, timestamps []time.Time, threshold int) []DownsampledPoint {
+	if len(data) != len(timestamps) {
+		panic("data and timestamps must be same length")
 	}
 
-	sampled := make([]float64, 0, threshold)
-	sampled = append(sampled, data[0]) // First point
+	if threshold >= len(data) || threshold <= 0 {
+		result := make([]DownsampledPoint, len(data))
+		for i := range data {
+			result[i] = DownsampledPoint{
+				Timestamp: timestamps[i],
+				Value:     data[i],
+			}
+		}
+		return result
+	}
+
+	sampled := make([]DownsampledPoint, threshold)
+	sampled[0] = DownsampledPoint{Timestamp: timestamps[0], Value: data[0]}
 
 	bucketSize := float64(len(data)-2) / float64(threshold-2)
+	a := 0
 
-	for i := 1; i < threshold-1; i++ {
-		bucketStart := int(float64(i-1)*bucketSize) + 1
-		bucketEnd := int(float64(i)*bucketSize) + 1
+	for i := 0; i < threshold-2; i++ {
+		avgRangeStart := int(float64(i+1)*bucketSize) + 1
+		avgRangeEnd := int(float64(i+2)*bucketSize) + 1
+		if avgRangeEnd > len(data) {
+			avgRangeEnd = len(data)
+		}
 
-		if bucketEnd >= len(data) {
-			bucketEnd = len(data) - 1
+		var avgRange float64
+		for j := avgRangeStart; j < avgRangeEnd; j++ {
+			avgRange += data[j]
+		}
+		avgRange /= float64(avgRangeEnd - avgRangeStart)
+
+		rangeOffs := int(float64(i)*bucketSize) + 1
+		rangeTo := int(float64(i+1)*bucketSize) + 1
+		if rangeTo > len(data) {
+			rangeTo = len(data)
 		}
 
 		maxArea := -1.0
-		selectedPoint := data[bucketStart]
-
-		for j := bucketStart; j < bucketEnd; j++ {
-			area := triangleArea(
-				data[bucketStart-1],
+		nextAAt := 0
+		for j := rangeOffs; j < rangeTo; j++ {
+			area := areaSize(
+				data[a],
 				data[j],
-				data[bucketEnd],
+				avgRange,
 			)
-
 			if area > maxArea {
 				maxArea = area
-				selectedPoint = data[j]
+				nextAAt = j
 			}
 		}
 
-		sampled = append(sampled, selectedPoint)
+		sampled[i+1] = DownsampledPoint{
+			Timestamp: timestamps[nextAAt],
+			Value:     data[nextAAt],
+		}
+		a = nextAAt
 	}
 
-	sampled = append(sampled, data[len(data)-1]) // Last point
+	sampled[threshold-1] = DownsampledPoint{
+		Timestamp: timestamps[len(timestamps)-1],
+		Value:     data[len(data)-1],
+	}
 	return sampled
 }
 
-// triangleArea calculates the area of a triangle formed by three points
-func triangleArea(a, b, c float64) float64 {
-	return abs((a-b)*(c-b)-(b-c)*(a-c)) / 2
-}
-
-func abs(x float64) float64 {
-	if x < 0 {
-		return -x
-	}
-	return x
+func areaSize(a, b, avg float64) float64 {
+	return (a-avg)*(a-avg) + (b-avg)*(b-avg)
 }

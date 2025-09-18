@@ -1,69 +1,69 @@
 package circuitbreaker
 
 import (
-	"context"
+	"log"
+	"sync"
 	"time"
-
-	"github.com/sony/gobreaker"
 )
 
-// CircuitBreaker wraps gobreaker.CircuitBreaker with context support
 type CircuitBreaker struct {
-	cb *gobreaker.CircuitBreaker
+	state        string // "closed", "open", "half-open"
+	failures     int
+	maxFailures  int
+	resetTimeout time.Duration
+	lastFailure  time.Time
+	mu           sync.Mutex
 }
 
-// New creates a new CircuitBreaker with the given name and settings
-func New(name string, st gobreaker.Settings) *CircuitBreaker {
+func New(maxFailures int, resetTimeout time.Duration) *CircuitBreaker {
 	return &CircuitBreaker{
-		cb: gobreaker.NewCircuitBreaker(st),
+		state:        "closed",
+		maxFailures:  maxFailures,
+		resetTimeout: resetTimeout,
 	}
 }
 
-// Execute runs the given function with circuit breaker protection
-func (c *CircuitBreaker) Execute(ctx context.Context, req func() (interface{}, error)) (interface{}, error) {
-	// Check if context is already canceled
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	default:
-	}
+func (cb *CircuitBreaker) AllowRequest() bool {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
 
-	resultChan := make(chan interface{}, 1)
-	errChan := make(chan error, 1)
-
-	go func() {
-		res, err := c.cb.Execute(func() (interface{}, error) {
-			return req()
-		})
-		if err != nil {
-			errChan <- err
-			return
+	now := time.Now()
+	if cb.state == "open" {
+		if now.Sub(cb.lastFailure) < cb.resetTimeout {
+			return false
 		}
-		resultChan <- res
-	}()
-
-	select {
-	case res := <-resultChan:
-		return res, nil
-	case err := <-errChan:
-		return nil, err
-	case <-ctx.Done():
-		return nil, ctx.Err()
+		// Timeout expired, transition to half-open
+		cb.state = "half-open"
+		log.Printf("Circuit breaker transitioning to half-open state")
 	}
+	return true
 }
 
-// DefaultSettings returns sensible default circuit breaker settings
-func DefaultSettings(name string) gobreaker.Settings {
-	return gobreaker.Settings{
-		Name:        name,
-		MaxRequests: 3,
-		Interval:    30 * time.Second,
-		Timeout:     60 * time.Second,
-		ReadyToTrip: func(counts gobreaker.Counts) bool {
-			return counts.ConsecutiveFailures > 5
-		},
-		OnStateChange: func(name string, from gobreaker.State, to gobreaker.State) {
-			// Log state changes for monitoring
-		},
+func (cb *CircuitBreaker) RecordSuccess() {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+
+	if cb.state == "half-open" {
+		log.Printf("Circuit breaker test request succeeded, closing circuit")
+	}
+	cb.state = "closed"
+	cb.failures = 0
+}
+
+func (cb *CircuitBreaker) RecordFailure() {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+
+	now := time.Now()
+	cb.failures++
+	cb.lastFailure = now
+
+	if cb.state == "half-open" {
+		// Immediately open the circuit on failure in half-open state
+		log.Printf("Circuit breaker test request failed, reopening circuit")
+		cb.state = "open"
+	} else if cb.failures >= cb.maxFailures {
+		log.Printf("Circuit breaker opened due to %d consecutive failures", cb.failures)
+		cb.state = "open"
 	}
 }
